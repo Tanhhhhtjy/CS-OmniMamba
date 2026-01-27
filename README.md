@@ -20,6 +20,10 @@ Matching rule:
 - nearest RADAR within 1 hour of t
 - RAIN targets at t+1h, t+2h, t+3h must exist
 
+## Dependencies
+
+- `mamba-ssm` is required for the model blocks
+
 ## Run
 
 ```bash
