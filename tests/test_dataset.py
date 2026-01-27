@@ -1,10 +1,13 @@
 import tempfile
 from pathlib import Path
 
+import pytest
 import torch
 from PIL import Image
 
 from omnimamba.config import TrainingConfig
+
+pytest.importorskip("torchvision")
 from omnimamba.dataset import TripleChannelDataset, build_transforms
 
 

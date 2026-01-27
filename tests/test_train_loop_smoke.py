@@ -36,7 +36,7 @@ def test_train_loop_smoke():
     criterion = SpectralStructuralWeightedLoss().to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
     loss, _ = train_epoch(model, loader, device, criterion, optimizer)
-    assert loss >= 0
+    assert torch.isfinite(torch.tensor(loss))
 
     val_loss, metrics = validate_epoch(model, loader, device)
     assert val_loss >= 0

@@ -6,13 +6,7 @@ import os
 import numpy as np
 import torch
 
-from omnimamba.config import TrainingConfig
 from omnimamba.constants import RESULTS_DIR_DEFAULT
-from omnimamba.data_match import match_samples
-from omnimamba.dataset import build_loaders
-from omnimamba.model import CrossAttentionMamba
-from omnimamba.splits import split_records
-from omnimamba.train_loop import train, validate_epoch
 
 
 def _set_seed(seed: int) -> None:
@@ -37,6 +31,13 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = _build_arg_parser().parse_args()
+
+    from omnimamba.config import TrainingConfig
+    from omnimamba.data_match import match_samples
+    from omnimamba.dataset import build_loaders
+    from omnimamba.model import CrossAttentionMamba
+    from omnimamba.splits import split_records
+    from omnimamba.train_loop import train, validate_epoch
 
     cfg = TrainingConfig()
     cfg = replace(
