@@ -1,0 +1,145 @@
+from __future__ import annotations
+
+import os
+from typing import Dict, List, Tuple
+
+import torch
+
+from .config import TrainingConfig
+from .losses import SpectralStructuralWeightedLoss
+from .metrics import mae, mape, psnr, ssim_simple
+from .viz import plot_gate_history, plot_losses, show_results
+
+
+def train_epoch(
+    model,
+    dataloader,
+    device,
+    criterion,
+    optimizer,
+) -> Tuple[float, float]:
+    model.train()
+
+    running_loss = 0.0
+    gate_accum = 0.0
+    gate_count = 0
+
+    for img1, img2, targets in dataloader:
+        img1, img2, targets = img1.to(device), img2.to(device), targets.to(device)
+
+        optimizer.zero_grad()
+        output = model(img1, img2)
+        loss = criterion(output, targets)
+        loss.backward()
+        optimizer.step()
+
+        running_loss += loss.item()
+        if getattr(model, "cross_attn", None) and model.cross_attn.last_gate_mean is not None:
+            gate_accum += model.cross_attn.last_gate_mean
+            gate_count += 1
+
+    avg_loss = running_loss / max(len(dataloader), 1)
+    avg_gate = gate_accum / gate_count if gate_count > 0 else None
+    return avg_loss, avg_gate
+
+
+def validate_epoch(model, dataloader, device) -> Tuple[float, Dict[str, List[float]]]:
+    model.eval()
+    criterion = torch.nn.MSELoss()
+    total_loss = 0.0
+
+    total_mae = [0.0, 0.0, 0.0]
+    total_mape = [0.0, 0.0, 0.0]
+    total_psnr = [0.0, 0.0, 0.0]
+    total_ssim = [0.0, 0.0, 0.0]
+    num_batches = 0
+
+    with torch.no_grad():
+        for img1, img2, targets in dataloader:
+            img1, img2, targets = img1.to(device), img2.to(device), targets.to(device)
+            output = model(img1, img2)
+
+            loss = criterion(output, targets)
+            total_loss += loss.item()
+
+            for t in range(3):
+                out_t = output[:, t]
+                tgt_t = targets[:, t]
+
+                total_mae[t] += mae(out_t, tgt_t).item()
+                total_mape[t] += mape(out_t, tgt_t).item()
+                total_psnr[t] += psnr(out_t, tgt_t).item()
+                total_ssim[t] += ssim_simple(out_t, tgt_t).item()
+
+            num_batches += 1
+
+    denom = max(num_batches, 1)
+    avg_loss = total_loss / denom
+    metrics = {
+        "mae": [v / denom for v in total_mae],
+        "mape": [v / denom for v in total_mape],
+        "psnr": [v / denom for v in total_psnr],
+        "ssim": [v / denom for v in total_ssim],
+    }
+    return avg_loss, metrics
+
+
+def train(
+    model,
+    tr_loader,
+    val_loader,
+    device,
+    cfg: TrainingConfig,
+    results_dir: str,
+) -> None:
+    os.makedirs(results_dir, exist_ok=True)
+    criterion = SpectralStructuralWeightedLoss(
+        w_mae=1.0, w_fft=0.05, w_ssim=0.1, heavy_rain_boost=5.0
+    ).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50)
+    train_losses: List[float] = []
+    val_losses: List[float] = []
+    gate_history: List[float] = []
+
+    best_val_loss = float("inf")
+    patience = 35
+    counter = 0
+
+    print(f"Start training for {cfg.epochs} epochs...")
+
+    for epoch in range(cfg.epochs):
+        tr_loss, avg_gate = train_epoch(model, tr_loader, device, criterion, optimizer)
+        train_losses.append(tr_loss)
+        gate_history.append(avg_gate)
+
+        val_loss, metrics = validate_epoch(model, val_loader, device)
+        val_losses.append(val_loss)
+
+        gate_display = avg_gate if avg_gate is not None else "N/A"
+        print(
+            f"Epoch {epoch + 1}/{cfg.epochs} | TrnLoss: {tr_loss:.5f} | ValLoss: {val_loss:.5f} | Gate: {gate_display}"
+        )
+
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            counter = 0
+            torch.save(model.state_dict(), os.path.join(results_dir, "best_model.pth"))
+        else:
+            counter += 1
+            if counter >= patience:
+                print("Early stopping triggered.")
+                break
+
+        if (epoch + 1) % 5 == 0:
+            show_results(model, val_loader, device, epoch, results_dir)
+            print("Validation metrics:")
+            for t in range(3):
+                print(
+                    f"  T+{t + 1}h | MAE: {metrics['mae'][t]:.4f} | MAPE: {metrics['mape'][t]:.2f}% | PSNR: {metrics['psnr'][t]:.2f} | SSIM: {metrics['ssim'][t]:.4f}"
+                )
+        scheduler.step()
+
+    plot_losses(train_losses, val_losses, results_dir)
+    plot_gate_history(gate_history, results_dir)
+    torch.save(model.state_dict(), os.path.join(results_dir, "final_model.pth"))
