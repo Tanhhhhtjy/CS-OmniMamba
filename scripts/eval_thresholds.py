@@ -31,6 +31,19 @@ def _bin_mask(values: torch.Tensor, low: float | None, high: float | None) -> to
     return (values > low) & (values <= high)
 
 
+def _decode_rain_tensor(
+    tensor: torch.Tensor,
+    max_rainfall: float,
+    use_log: bool,
+) -> torch.Tensor:
+    gray = torch.clamp(tensor, 0.0, 1.0) * 255.0
+    inv = 255.0 - gray
+    if not use_log:
+        return inv / 255.0 * max_rainfall
+    max_log = torch.log1p(torch.tensor(max_rainfall, device=tensor.device))
+    return torch.expm1(inv / 255.0 * max_log)
+
+
 def _update_counts(
     counts: Dict[str, torch.Tensor],
     preds: torch.Tensor,
@@ -69,16 +82,15 @@ def main() -> None:
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument(
-        "--rain-scale",
+        "--rain-max",
         type=float,
-        default=1.0,
-        help="Scale applied to predictions/targets before thresholding.",
+        default=50.0,
+        help="Maximum rainfall used when encoding RAIN images.",
     )
     parser.add_argument(
-        "--rain-offset",
-        type=float,
-        default=0.0,
-        help="Offset applied to predictions/targets before thresholding.",
+        "--no-rain-log",
+        action="store_true",
+        help="Treat RAIN images as linear encoded values.",
     )
     args = parser.parse_args()
 
@@ -138,8 +150,8 @@ def main() -> None:
             img1, img2, targets = img1.to(device), img2.to(device), targets.to(device)
             preds = model(img1, img2)
 
-            preds = preds * args.rain_scale + args.rain_offset
-            targets = targets * args.rain_scale + args.rain_offset
+            preds = _decode_rain_tensor(preds, args.rain_max, not args.no_rain_log)
+            targets = _decode_rain_tensor(targets, args.rain_max, not args.no_rain_log)
 
             _update_counts(counts, preds, targets)
 
