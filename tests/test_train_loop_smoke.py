@@ -1,8 +1,8 @@
+import pytest
 import torch
 from torch.utils.data import DataLoader, Dataset
 
 from omnimamba.config import TrainingConfig
-from omnimamba.model import CrossAttentionMamba
 from omnimamba.losses import SpectralStructuralWeightedLoss
 from omnimamba.train_loop import train_epoch, validate_epoch
 
@@ -19,6 +19,9 @@ class _DummyDataset(Dataset):
 
 
 def test_train_loop_smoke():
+    pytest.importorskip("mamba_ssm")
+    from omnimamba.model import CrossAttentionMamba
+
     cfg = TrainingConfig(epochs=1, batch_size=1)
     model = CrossAttentionMamba(
         img_size=66,

@@ -1,9 +1,11 @@
+import pytest
 import torch
-
-from omnimamba.model import CrossAttentionMamba
 
 
 def test_model_forward_shape():
+    pytest.importorskip("mamba_ssm")
+    from omnimamba.model import CrossAttentionMamba
+
     model = CrossAttentionMamba(
         img_size=66,
         img_size_w=70,

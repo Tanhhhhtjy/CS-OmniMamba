@@ -3,6 +3,13 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 
+try:
+    from mamba_ssm import Mamba
+except Exception as exc:
+    raise ImportError(
+        "Mamba is required. Install mamba-ssm to use the model."
+    ) from exc
+
 
 class GatedCrossAttentionBlock(nn.Module):
     def __init__(self, dim: int, num_heads: int, dropout: float = 0.1):
@@ -34,7 +41,7 @@ class GatedCrossAttentionBlock(nn.Module):
         return output
 
 
-class OmniBiMambaBlockPseudo(nn.Module):
+class MambaBlock(nn.Module):
     def __init__(
         self,
         dim: int,
@@ -44,81 +51,15 @@ class OmniBiMambaBlockPseudo(nn.Module):
         dropout: float = 0.1,
     ):
         super().__init__()
-        self.dim = dim
-        self.d_inner = int(expand * dim)
         self.norm = nn.LayerNorm(dim)
-        self.in_proj = nn.Linear(dim, self.d_inner * 2)
-        self.conv1d = nn.Conv1d(
-            in_channels=self.d_inner,
-            out_channels=self.d_inner,
-            bias=True,
-            kernel_size=d_conv,
-            groups=self.d_inner,
-            padding=d_conv - 1,
-        )
-        self.activation = nn.SiLU()
-
-        self.ssm_h = nn.GRU(
-            input_size=self.d_inner,
-            hidden_size=d_state,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-        )
-        self.ssm_proj_h = nn.Linear(d_state * 2, self.d_inner)
-
-        self.ssm_v = nn.GRU(
-            input_size=self.d_inner,
-            hidden_size=d_state,
-            num_layers=1,
-            batch_first=True,
-            bidirectional=True,
-        )
-        self.ssm_proj_v = nn.Linear(d_state * 2, self.d_inner)
-
-        self.fusion_linear = nn.Linear(self.d_inner * 2, self.d_inner)
-        self.out_proj = nn.Linear(self.d_inner, dim)
+        self.mamba = Mamba(d_model=dim, d_state=d_state, d_conv=d_conv, expand=expand)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, height: int, width: int) -> torch.Tensor:
         residual = x
         x = self.norm(x)
-
-        xz = self.in_proj(x)
-        x_branch, z_branch = xz.chunk(2, dim=-1)
-
-        x_branch = x_branch.permute(0, 2, 1)
-        x_branch = self.conv1d(x_branch)[:, :, : x.shape[1]]
-        x_branch = self.activation(x_branch)
-        x_branch = x_branch.permute(0, 2, 1)
-
-        ssm_out_h, _ = self.ssm_h(x_branch)
-        x_feat_h = self.ssm_proj_h(ssm_out_h)
-
-        bsz, length, channels = x_branch.shape
-        x_v_in = (
-            x_branch.view(bsz, height, width, channels)
-            .permute(0, 2, 1, 3)
-            .contiguous()
-            .view(bsz, length, channels)
-        )
-        ssm_out_v, _ = self.ssm_v(x_v_in)
-        x_feat_v = self.ssm_proj_v(ssm_out_v)
-        x_feat_v = (
-            x_feat_v.view(bsz, width, height, channels)
-            .permute(0, 2, 1, 3)
-            .contiguous()
-            .view(bsz, length, channels)
-        )
-
-        x_combined = torch.cat([x_feat_h, x_feat_v], dim=-1)
-        x_ssm_total = self.fusion_linear(x_combined)
-
-        z_branch = self.activation(z_branch)
-        x_out = x_ssm_total * z_branch
-
-        out = self.out_proj(x_out)
-        return residual + self.dropout(out)
+        x = self.mamba(x)
+        return residual + self.dropout(x)
 
 
 class PrecipitationEnhancementCNN(nn.Module):
@@ -212,13 +153,13 @@ class CrossAttentionMamba(nn.Module):
 
         self.blocks1 = nn.ModuleList(
             [
-                OmniBiMambaBlockPseudo(dim=dim, d_state=d_state, expand=2, dropout=dropout)
+                MambaBlock(dim=dim, d_state=d_state, expand=2, dropout=dropout)
                 for _ in range(depth)
             ]
         )
         self.blocks2 = nn.ModuleList(
             [
-                OmniBiMambaBlockPseudo(dim=dim, d_state=d_state, expand=2, dropout=dropout)
+                MambaBlock(dim=dim, d_state=d_state, expand=2, dropout=dropout)
                 for _ in range(depth)
             ]
         )
