@@ -20,12 +20,6 @@ Matching rule:
 - nearest RADAR within 1 hour of t
 - RAIN targets at t+1h, t+2h, t+3h must exist
 
-## Time Split
-
-- Train: 2023-04-30 23:00:00 to 2023-07-30 23:59:59
-- Val: 2023-07-31 00:00:00 to 2023-08-06 23:59:59
-- Test: 2023-08-07 00:00:00 to 2023-08-31 23:59:59
-
 ## Run
 
 ```bash
