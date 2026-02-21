@@ -1,14 +1,4 @@
-from typing import List, Sequence, Tuple
-
-import torch
-from PIL import Image
-from torch.utils.data import DataLoader, Dataset
-from torchvision import transforms
-
-from .config import TrainingConfig
-from .data_match import SampleRecord
-
-
+import random as _random
 from typing import List, Sequence, Tuple
 
 import torch
@@ -24,6 +14,10 @@ class TripleChannelDataset(Dataset):
     """Dataset yielding (pwv, radar_seq, targets).
 
     radar_seq shape: [T, 1, H, W]  where T = radar_seq_len
+
+    When ``augment=True`` (training mode), random horizontal and vertical
+    flips are applied **consistently** across all modalities so that spatial
+    correspondence between PWV, radar and target is preserved.
     """
 
     def __init__(
@@ -34,14 +28,25 @@ class TripleChannelDataset(Dataset):
         target_paths_2h: Sequence[str],
         target_paths_3h: Sequence[str],
         transform=None,
+        augment: bool = False,
     ):
         self.pwv_paths = list(pwv_paths)
         self.radar_seq_paths = list(radar_seq_paths)
         self.targets = list(zip(target_paths_1h, target_paths_2h, target_paths_3h))
         self.transform = transform
+        self.augment = augment
 
     def __len__(self) -> int:
         return len(self.pwv_paths)
+
+    @staticmethod
+    def _apply_flips(tensor: torch.Tensor, hflip: bool, vflip: bool) -> torch.Tensor:
+        """Flip a (..., H, W) tensor in-place consistently."""
+        if hflip:
+            tensor = torch.flip(tensor, [-1])
+        if vflip:
+            tensor = torch.flip(tensor, [-2])
+        return tensor
 
     def __getitem__(self, idx: int):
         pwv = Image.open(self.pwv_paths[idx]).convert("L")
@@ -68,6 +73,16 @@ class TripleChannelDataset(Dataset):
         targets = torch.stack(
             [target_1h.squeeze(), target_2h.squeeze(), target_3h.squeeze()], dim=0
         )
+
+        # Synchronized augmentation: same flip for every modality
+        if self.augment:
+            hflip = _random.random() < 0.5
+            vflip = _random.random() < 0.5
+            if hflip or vflip:
+                pwv = self._apply_flips(pwv, hflip, vflip)
+                targets = self._apply_flips(targets, hflip, vflip)
+                radar_seq = self._apply_flips(radar_seq, hflip, vflip)
+
         return pwv, radar_seq, targets
 
 
@@ -102,9 +117,10 @@ def build_loaders(
     val_paths = _records_to_paths(val_records)
     test_paths = _records_to_paths(test_records)
 
-    train_ds = TripleChannelDataset(*tr_paths, transform=tf)
-    val_ds = TripleChannelDataset(*val_paths, transform=tf)
-    test_ds = TripleChannelDataset(*test_paths, transform=tf)
+    # Training set gets random H/V flip augmentation; val/test stay deterministic
+    train_ds = TripleChannelDataset(*tr_paths, transform=tf, augment=True)
+    val_ds = TripleChannelDataset(*val_paths, transform=tf, augment=False)
+    test_ds = TripleChannelDataset(*test_paths, transform=tf, augment=False)
 
     train_loader = DataLoader(
         train_ds, batch_size=cfg.batch_size, shuffle=True,

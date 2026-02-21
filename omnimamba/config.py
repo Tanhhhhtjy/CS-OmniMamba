@@ -16,7 +16,7 @@ class TrainingConfig:
     epochs: int = 1000
     lr: float = 1e-4
     # L2 regularisation – reduces overfitting on small validation sets
-    weight_decay: float = 1e-3
+    weight_decay: float = 2e-3
     # Cosine-restart period (epochs). patience must be >= lr_scheduler_T0
     lr_scheduler_T0: int = 30
     num_workers: int = 0 if os.name == "nt" else 4
