@@ -18,14 +18,22 @@ def train_epoch(
     device,
     criterion,
     optimizer,
+    scheduler=None,
+    epoch: int = 0,
 ) -> Tuple[float, float]:
+    """Run one training epoch.
+
+    scheduler is stepped *per batch* using the fractional-epoch convention
+    required by CosineAnnealingWarmRestarts so that the LR curve is smooth.
+    """
     model.train()
 
     running_loss = 0.0
     gate_accum = 0.0
     gate_count = 0
+    n_batches = max(len(dataloader), 1)
 
-    for img1, radar_seq, targets in dataloader:
+    for i, (img1, radar_seq, targets) in enumerate(dataloader):
         img1, radar_seq, targets = img1.to(device), radar_seq.to(device), targets.to(device)
 
         optimizer.zero_grad()
@@ -35,12 +43,16 @@ def train_epoch(
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
+        # Per-batch LR update for CosineAnnealingWarmRestarts
+        if scheduler is not None:
+            scheduler.step(epoch + i / n_batches)
+
         running_loss += loss.item()
         if getattr(model, "cross_attn", None) and model.cross_attn.last_gate_mean is not None:
             gate_accum += model.cross_attn.last_gate_mean
             gate_count += 1
 
-    avg_loss = running_loss / max(len(dataloader), 1)
+    avg_loss = running_loss / n_batches
     avg_gate = gate_accum / gate_count if gate_count > 0 else None
     return avg_loss, avg_gate
 
@@ -78,8 +90,10 @@ def validate_epoch(
                 tgt_t = targets[:, t]
 
                 total_mae[t] += mae(out_t, tgt_t).item()
-                total_csi[t] += csi(out_t, tgt_t, threshold=0.1).item()
-                total_ets[t] += ets(out_t, tgt_t, threshold=0.1).item()
+                # threshold=0.04 ≈ 10 mm/h after [0,1] normalisation;
+                # 0.1 was too high and caused trivially-perfect CSI on sparse rain fields
+                total_csi[t] += csi(out_t, tgt_t, threshold=0.04).item()
+                total_ets[t] += ets(out_t, tgt_t, threshold=0.04).item()
                 total_psnr[t] += psnr(out_t, tgt_t).item()
                 total_ssim[t] += ssim_simple(out_t, tgt_t).item()
 
@@ -110,20 +124,27 @@ def train(
     criterion = SpectralStructuralWeightedLoss(
         w_mae=1.0, w_fft=0.05, w_ssim=0.1, heavy_rain_boost=5.0
     ).to(device)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(optimizer, T_0=50)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+    # T_0 from config; patience must be > T_0 so early-stopping cannot fire
+    # before the first cosine-restart cycle finishes.
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingWarmRestarts(
+        optimizer, T_0=cfg.lr_scheduler_T0
+    )
     train_losses: List[float] = []
     val_losses: List[float] = []
     gate_history: List[float] = []
 
     best_val_loss = float("inf")
-    patience = 35
+    patience = cfg.lr_scheduler_T0 * 2  # always >= 2 × T_0
     counter = 0
 
     print(f"Start training for {cfg.epochs} epochs...")
 
     for epoch in range(cfg.epochs):
-        tr_loss, avg_gate = train_epoch(model, tr_loader, device, criterion, optimizer)
+        # Scheduler is now stepped per-batch inside train_epoch
+        tr_loss, avg_gate = train_epoch(
+            model, tr_loader, device, criterion, optimizer, scheduler=scheduler, epoch=epoch
+        )
         train_losses.append(tr_loss)
         gate_history.append(avg_gate)
 
@@ -134,8 +155,6 @@ def train(
         print(
             f"Epoch {epoch + 1}/{cfg.epochs} | TrnLoss: {tr_loss:.5f} | ValLoss: {val_loss:.5f} | Gate: {gate_display}"
         )
-
-        scheduler.step()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
