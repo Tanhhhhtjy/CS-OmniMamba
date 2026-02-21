@@ -1,13 +1,14 @@
 from __future__ import annotations
 
+import json
 import os
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import torch
 
 from .config import TrainingConfig
 from .losses import SpectralStructuralWeightedLoss
-from .metrics import mae, mape, psnr, ssim_simple
+from .metrics import csi, ets, mae, psnr, ssim_simple
 from .viz import plot_gate_history, plot_losses, show_results
 
 
@@ -24,13 +25,14 @@ def train_epoch(
     gate_accum = 0.0
     gate_count = 0
 
-    for img1, img2, targets in dataloader:
-        img1, img2, targets = img1.to(device), img2.to(device), targets.to(device)
+    for img1, radar_seq, targets in dataloader:
+        img1, radar_seq, targets = img1.to(device), radar_seq.to(device), targets.to(device)
 
         optimizer.zero_grad()
-        output = model(img1, img2)
+        output = model(img1, radar_seq)
         loss = criterion(output, targets)
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         running_loss += loss.item()
@@ -43,21 +45,30 @@ def train_epoch(
     return avg_loss, avg_gate
 
 
-def validate_epoch(model, dataloader, device) -> Tuple[float, Dict[str, List[float]]]:
+def validate_epoch(
+    model,
+    dataloader,
+    device,
+    criterion=None,
+) -> Tuple[float, Dict[str, List[float]]]:
     model.eval()
-    criterion = torch.nn.MSELoss()
+    if criterion is None:
+        criterion = SpectralStructuralWeightedLoss(
+            w_mae=1.0, w_fft=0.05, w_ssim=0.1, heavy_rain_boost=5.0
+        ).to(device)
     total_loss = 0.0
 
     total_mae = [0.0, 0.0, 0.0]
-    total_mape = [0.0, 0.0, 0.0]
+    total_csi = [0.0, 0.0, 0.0]
+    total_ets = [0.0, 0.0, 0.0]
     total_psnr = [0.0, 0.0, 0.0]
     total_ssim = [0.0, 0.0, 0.0]
     num_batches = 0
 
     with torch.no_grad():
-        for img1, img2, targets in dataloader:
-            img1, img2, targets = img1.to(device), img2.to(device), targets.to(device)
-            output = model(img1, img2)
+        for img1, radar_seq, targets in dataloader:
+            img1, radar_seq, targets = img1.to(device), radar_seq.to(device), targets.to(device)
+            output = model(img1, radar_seq)
 
             loss = criterion(output, targets)
             total_loss += loss.item()
@@ -67,7 +78,8 @@ def validate_epoch(model, dataloader, device) -> Tuple[float, Dict[str, List[flo
                 tgt_t = targets[:, t]
 
                 total_mae[t] += mae(out_t, tgt_t).item()
-                total_mape[t] += mape(out_t, tgt_t).item()
+                total_csi[t] += csi(out_t, tgt_t, threshold=0.1).item()
+                total_ets[t] += ets(out_t, tgt_t, threshold=0.1).item()
                 total_psnr[t] += psnr(out_t, tgt_t).item()
                 total_ssim[t] += ssim_simple(out_t, tgt_t).item()
 
@@ -76,8 +88,9 @@ def validate_epoch(model, dataloader, device) -> Tuple[float, Dict[str, List[flo
     denom = max(num_batches, 1)
     avg_loss = total_loss / denom
     metrics = {
-        "mae": [v / denom for v in total_mae],
-        "mape": [v / denom for v in total_mape],
+        "mae":  [v / denom for v in total_mae],
+        "csi":  [v / denom for v in total_csi],
+        "ets":  [v / denom for v in total_ets],
         "psnr": [v / denom for v in total_psnr],
         "ssim": [v / denom for v in total_ssim],
     }
@@ -91,6 +104,7 @@ def train(
     device,
     cfg: TrainingConfig,
     results_dir: str,
+    test_loader=None,
 ) -> None:
     os.makedirs(results_dir, exist_ok=True)
     criterion = SpectralStructuralWeightedLoss(
@@ -113,13 +127,15 @@ def train(
         train_losses.append(tr_loss)
         gate_history.append(avg_gate)
 
-        val_loss, metrics = validate_epoch(model, val_loader, device)
+        val_loss, metrics = validate_epoch(model, val_loader, device, criterion)
         val_losses.append(val_loss)
 
         gate_display = avg_gate if avg_gate is not None else "N/A"
         print(
             f"Epoch {epoch + 1}/{cfg.epochs} | TrnLoss: {tr_loss:.5f} | ValLoss: {val_loss:.5f} | Gate: {gate_display}"
         )
+
+        scheduler.step()
 
         if val_loss < best_val_loss:
             best_val_loss = val_loss
@@ -136,10 +152,30 @@ def train(
             print("Validation metrics:")
             for t in range(3):
                 print(
-                    f"  T+{t + 1}h | MAE: {metrics['mae'][t]:.4f} | MAPE: {metrics['mape'][t]:.2f}% | PSNR: {metrics['psnr'][t]:.2f} | SSIM: {metrics['ssim'][t]:.4f}"
+                    f"  T+{t + 1}h | MAE: {metrics['mae'][t]:.4f} | CSI: {metrics['csi'][t]:.4f} | ETS: {metrics['ets'][t]:.4f} | PSNR: {metrics['psnr'][t]:.2f} | SSIM: {metrics['ssim'][t]:.4f}"
                 )
-        scheduler.step()
 
     plot_losses(train_losses, val_losses, results_dir)
     plot_gate_history(gate_history, results_dir)
     torch.save(model.state_dict(), os.path.join(results_dir, "final_model.pth"))
+
+    # Load best checkpoint and evaluate on test set
+    best_ckpt = os.path.join(results_dir, "best_model.pth")
+    if os.path.exists(best_ckpt):
+        model.load_state_dict(torch.load(best_ckpt, map_location=device))
+        print("Loaded best_model.pth for final evaluation.")
+
+    val_loss_final, val_metrics = validate_epoch(model, val_loader, device, criterion)
+    report: Dict = {"val": {"loss": val_loss_final, "metrics": val_metrics}}
+
+    if test_loader is not None:
+        test_loss, test_metrics = validate_epoch(model, test_loader, device, criterion)
+        report["test"] = {"loss": test_loss, "metrics": test_metrics}
+        print(f"Test Loss: {test_loss:.5f}")
+        for t in range(3):
+            print(
+                f"  Test T+{t + 1}h | MAE: {test_metrics['mae'][t]:.4f} | CSI: {test_metrics['csi'][t]:.4f} | ETS: {test_metrics['ets'][t]:.4f} | PSNR: {test_metrics['psnr'][t]:.2f} | SSIM: {test_metrics['ssim'][t]:.4f}"
+            )
+
+    with open(os.path.join(results_dir, "eval_report.json"), "w") as f:
+        json.dump(report, f, indent=2)

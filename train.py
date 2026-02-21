@@ -37,7 +37,7 @@ def main() -> None:
     from omnimamba.dataset import build_loaders
     from omnimamba.model import CrossAttentionMamba
     from omnimamba.splits import split_records
-    from omnimamba.train_loop import train, validate_epoch
+    from omnimamba.train_loop import train
 
     cfg = TrainingConfig()
     cfg = replace(
@@ -81,26 +81,13 @@ def main() -> None:
         dim=cfg.dim,
         depth=cfg.depth,
         num_classes=3,
+        radar_seq_len=cfg.radar_seq_len,
     ).to(device)
 
     results_dir = args.results_dir
     os.makedirs(results_dir, exist_ok=True)
 
-    train(model, train_loader, val_loader, device, cfg, results_dir)
-
-    val_loss, val_metrics = validate_epoch(model, val_loader, device)
-    test_loss, test_metrics = validate_epoch(model, test_loader, device)
-
-    print(f"Val MSE: {val_loss:.5f}")
-    print(f"Test MSE: {test_loss:.5f}")
-    for t in range(3):
-        print(
-            f"Val T+{t + 1}h | MAE: {val_metrics['mae'][t]:.4f} | MAPE: {val_metrics['mape'][t]:.2f}% | PSNR: {val_metrics['psnr'][t]:.2f} | SSIM: {val_metrics['ssim'][t]:.4f}"
-        )
-    for t in range(3):
-        print(
-            f"Test T+{t + 1}h | MAE: {test_metrics['mae'][t]:.4f} | MAPE: {test_metrics['mape'][t]:.2f}% | PSNR: {test_metrics['psnr'][t]:.2f} | SSIM: {test_metrics['ssim'][t]:.4f}"
-        )
+    train(model, train_loader, val_loader, device, cfg, results_dir, test_loader=test_loader)
 
 
 if __name__ == "__main__":

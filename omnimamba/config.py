@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+import os
 
 
 @dataclass
@@ -14,6 +15,10 @@ class TrainingConfig:
     batch_size: int = 8
     epochs: int = 1000
     lr: float = 1e-4
+    num_workers: int = 0 if os.name == "nt" else 4
+    # Radar temporal sequence: 12 frames x 6 min = 66 min history
+    # Increase to 20 (114 min) when GPU memory allows
+    radar_seq_len: int = 12
 
     train_start: datetime = datetime(2023, 4, 30, 23, 0, 0)
     train_end: datetime = datetime(2023, 7, 30, 23, 59, 59)

@@ -1,4 +1,5 @@
 from typing import Iterable, Optional
+import os
 
 import matplotlib.pyplot as plt
 import torch
@@ -10,7 +11,7 @@ def plot_losses(train: Iterable[float], val: Iterable[float], save_dir: str) -> 
     plt.plot(list(val), label="Val Loss")
     plt.title("Training & Validation Loss")
     plt.legend()
-    plt.savefig(f"{save_dir}/loss_curve.png")
+    plt.savefig(os.path.join(save_dir, "loss_curve.png"))
     plt.close()
 
 
@@ -25,23 +26,28 @@ def plot_gate_history(history: Iterable[Optional[float]], save_dir: str) -> None
     plt.figure(figsize=(8, 4))
     plt.plot(processed)
     plt.title("Gate Value Evolution")
-    plt.savefig(f"{save_dir}/gate_curve.png")
+    plt.savefig(os.path.join(save_dir, "gate_curve.png"))
     plt.close()
 
 
 def show_results(model, dataloader, device, epoch: int, save_dir: str, num_samples: int = 3) -> None:
     model.eval()
     try:
-        img1, img2, targets = next(iter(dataloader))
+        img1, radar_seq, targets = next(iter(dataloader))
     except StopIteration:
         return
 
-    img1, img2 = img1.to(device), img2.to(device)
+    img1 = img1.to(device)
+    radar_seq = radar_seq.to(device)
     with torch.no_grad():
-        preds = model(img1, img2)
+        preds = model(img1, radar_seq)
 
     img1 = img1.cpu()
-    img2 = img2.cpu()
+    # Use last radar frame for display
+    if radar_seq.dim() == 5:
+        img2_display = radar_seq[:, -1].cpu()   # [B, 1, H, W]
+    else:
+        img2_display = radar_seq.cpu()
     preds = preds.cpu().clamp(0, 1)
     targets = targets.cpu()
 
@@ -62,7 +68,7 @@ def show_results(model, dataloader, device, epoch: int, save_dir: str, num_sampl
 
     for i in range(min(num_samples, img1.size(0))):
         axes[i, 0].imshow(img1[i].squeeze(), cmap="gray")
-        axes[i, 1].imshow(img2[i].squeeze(), cmap="jet")
+        axes[i, 1].imshow(img2_display[i].squeeze(), cmap="jet")
 
         for t in range(3):
             axes[i, 2 + t * 2].imshow(preds[i, t], cmap="jet", vmin=0, vmax=1)
@@ -76,5 +82,5 @@ def show_results(model, dataloader, device, epoch: int, save_dir: str, num_sampl
             axes[i, col].axis("off")
 
     plt.tight_layout()
-    plt.savefig(f"{save_dir}/vis_epoch_{epoch + 1}.png")
+    plt.savefig(os.path.join(save_dir, f"vis_epoch_{epoch + 1}.png"))
     plt.close()

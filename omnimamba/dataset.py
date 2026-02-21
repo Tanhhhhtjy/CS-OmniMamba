@@ -9,43 +9,66 @@ from .config import TrainingConfig
 from .data_match import SampleRecord
 
 
+from typing import List, Sequence, Tuple
+
+import torch
+from PIL import Image
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms
+
+from .config import TrainingConfig
+from .data_match import SampleRecord
+
+
 class TripleChannelDataset(Dataset):
+    """Dataset yielding (pwv, radar_seq, targets).
+
+    radar_seq shape: [T, 1, H, W]  where T = radar_seq_len
+    """
+
     def __init__(
         self,
-        folder1_paths: Sequence[str],
-        folder2_paths: Sequence[str],
+        pwv_paths: Sequence[str],
+        radar_seq_paths: Sequence[Sequence[str]],
         target_paths_1h: Sequence[str],
         target_paths_2h: Sequence[str],
         target_paths_3h: Sequence[str],
         transform=None,
     ):
-        self.folder1_paths = list(folder1_paths)
-        self.folder2_paths = list(folder2_paths)
+        self.pwv_paths = list(pwv_paths)
+        self.radar_seq_paths = list(radar_seq_paths)
         self.targets = list(zip(target_paths_1h, target_paths_2h, target_paths_3h))
         self.transform = transform
 
     def __len__(self) -> int:
-        return len(self.folder1_paths)
+        return len(self.pwv_paths)
 
     def __getitem__(self, idx: int):
-        img1 = Image.open(self.folder1_paths[idx]).convert("L")
-        img2 = Image.open(self.folder2_paths[idx]).convert("L")
+        pwv = Image.open(self.pwv_paths[idx]).convert("L")
         t1, t2, t3 = self.targets[idx]
         target_1h = Image.open(t1).convert("L")
         target_2h = Image.open(t2).convert("L")
         target_3h = Image.open(t3).convert("L")
 
+        # Load each radar frame in sequence
+        radar_frames = [
+            Image.open(p).convert("L") for p in self.radar_seq_paths[idx]
+        ]
+
         if self.transform:
-            img1 = self.transform(img1)
-            img2 = self.transform(img2)
+            pwv = self.transform(pwv)
             target_1h = self.transform(target_1h)
             target_2h = self.transform(target_2h)
             target_3h = self.transform(target_3h)
+            radar_frames = [self.transform(f) for f in radar_frames]
+
+        # radar_seq: [T, 1, H, W]
+        radar_seq = torch.stack(radar_frames, dim=0)
 
         targets = torch.stack(
             [target_1h.squeeze(), target_2h.squeeze(), target_3h.squeeze()], dim=0
         )
-        return img1, img2, targets
+        return pwv, radar_seq, targets
 
 
 def build_transforms(cfg: TrainingConfig):
@@ -57,15 +80,15 @@ def build_transforms(cfg: TrainingConfig):
     )
 
 
-def _records_to_paths(records: Sequence[SampleRecord]) -> Tuple[List[str], ...]:
-    folder1, folder2, t1, t2, t3 = [], [], [], [], []
+def _records_to_paths(records: Sequence[SampleRecord]) -> Tuple:
+    pwv, radar_seqs, t1, t2, t3 = [], [], [], [], []
     for r in records:
-        folder1.append(r.pwv_path)
-        folder2.append(r.radar_path)
+        pwv.append(r.pwv_path)
+        radar_seqs.append(r.radar_seq_paths)
         t1.append(r.target_1h_path)
         t2.append(r.target_2h_path)
         t3.append(r.target_3h_path)
-    return folder1, folder2, t1, t2, t3
+    return pwv, radar_seqs, t1, t2, t3
 
 
 def build_loaders(
@@ -84,13 +107,16 @@ def build_loaders(
     test_ds = TripleChannelDataset(*test_paths, transform=tf)
 
     train_loader = DataLoader(
-        train_ds, batch_size=cfg.batch_size, shuffle=True, num_workers=4
+        train_ds, batch_size=cfg.batch_size, shuffle=True,
+        num_workers=cfg.num_workers, pin_memory=cfg.num_workers > 0,
     )
     val_loader = DataLoader(
-        val_ds, batch_size=cfg.batch_size, shuffle=False, num_workers=4
+        val_ds, batch_size=cfg.batch_size, shuffle=False,
+        num_workers=cfg.num_workers, pin_memory=cfg.num_workers > 0,
     )
     test_loader = DataLoader(
-        test_ds, batch_size=cfg.batch_size, shuffle=False, num_workers=4
+        test_ds, batch_size=cfg.batch_size, shuffle=False,
+        num_workers=cfg.num_workers, pin_memory=cfg.num_workers > 0,
     )
 
     return train_loader, val_loader, test_loader

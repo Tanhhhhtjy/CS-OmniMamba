@@ -1,2 +1,26 @@
 .worktrees
 
+CS-OmniMamba.zip
+
+data
+
+.github
+
+.superpowers
+
+.superpowers-installer
+
+.vscode
+
+data/
+
+plan.md
+
+.pytest_cache
+
+source
+source/
+
+__pycache__/
+*.pyc
+*.pyo

@@ -4,11 +4,11 @@ import torch
 import torch.nn as nn
 
 try:
-    from mamba_ssm import Mamba
-except Exception as exc:
-    raise ImportError(
-        "Mamba is required. Install mamba-ssm to use the model."
-    ) from exc
+    from mamba_ssm import Mamba as _MambaSSM
+    _MAMBA_AVAILABLE = True
+except Exception:
+    _MambaSSM = None
+    _MAMBA_AVAILABLE = False
 
 
 class GatedCrossAttentionBlock(nn.Module):
@@ -41,25 +41,144 @@ class GatedCrossAttentionBlock(nn.Module):
         return output
 
 
-class MambaBlock(nn.Module):
+class _OmniBiMambaBlockPseudo(nn.Module):
+    """GRU-based fallback: bidirectional horizontal + vertical omnidirectional scan.
+
+    This is the proven implementation from ver_1.2.py, used when mamba_ssm
+    is not available (no CUDA / not installed).
+    """
+
     def __init__(
         self,
         dim: int,
-        d_state: int = 64,
+        d_state: int = 32,
         d_conv: int = 4,
         expand: int = 2,
         dropout: float = 0.1,
     ):
         super().__init__()
+        self.dim = dim
+        self.d_inner = int(expand * dim)
         self.norm = nn.LayerNorm(dim)
-        self.mamba = Mamba(d_model=dim, d_state=d_state, d_conv=d_conv, expand=expand)
+
+        self.in_proj = nn.Linear(dim, self.d_inner * 2)
+        self.conv1d = nn.Conv1d(
+            in_channels=self.d_inner,
+            out_channels=self.d_inner,
+            bias=True,
+            kernel_size=d_conv,
+            groups=self.d_inner,
+            padding=d_conv - 1,
+        )
+        self.activation = nn.SiLU()
+
+        self.ssm_h = nn.GRU(
+            input_size=self.d_inner,
+            hidden_size=d_state,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+        )
+        self.ssm_proj_h = nn.Linear(d_state * 2, self.d_inner)
+
+        self.ssm_v = nn.GRU(
+            input_size=self.d_inner,
+            hidden_size=d_state,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=True,
+        )
+        self.ssm_proj_v = nn.Linear(d_state * 2, self.d_inner)
+
+        self.fusion_linear = nn.Linear(self.d_inner * 2, self.d_inner)
+        self.out_proj = nn.Linear(self.d_inner, dim)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, x: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        B, L, _ = x.shape
         residual = x
         x = self.norm(x)
-        x = self.mamba(x)
-        return residual + self.dropout(x)
+
+        xz = self.in_proj(x)
+        x_branch, z_branch = xz.chunk(2, dim=-1)
+
+        x_branch = x_branch.permute(0, 2, 1)
+        x_branch = self.conv1d(x_branch)[:, :, :L]
+        x_branch = self.activation(x_branch)
+        x_branch = x_branch.permute(0, 2, 1)
+
+        # Horizontal scan
+        ssm_out_h, _ = self.ssm_h(x_branch)
+        x_feat_h = self.ssm_proj_h(ssm_out_h)
+
+        # Vertical scan: transpose H↔W, scan, restore
+        C = x_branch.shape[2]
+        x_v_in = x_branch.view(B, height, width, C).permute(0, 2, 1, 3).contiguous().view(B, L, C)
+        ssm_out_v, _ = self.ssm_v(x_v_in)
+        x_feat_v = self.ssm_proj_v(ssm_out_v)
+        x_feat_v = x_feat_v.view(B, width, height, C).permute(0, 2, 1, 3).contiguous().view(B, L, C)
+
+        x_combined = torch.cat([x_feat_h, x_feat_v], dim=-1)
+        x_ssm_total = self.fusion_linear(x_combined)
+
+        z_branch = self.activation(z_branch)
+        x_out = x_ssm_total * z_branch
+        out = self.out_proj(x_out)
+        return residual + self.dropout(out)
+
+
+class OmniMambaBlock(nn.Module):
+    """Omnidirectional SSM block with automatic backend selection.
+
+    Priority:
+    1. mamba_ssm.Mamba (real SSM, requires CUDA) with H+V dual-pass scanning.
+    2. _OmniBiMambaBlockPseudo (GRU bidirectional, CPU-friendly) as fallback.
+
+    Both backends honour the (height, width) arguments for vertical scanning.
+    """
+
+    def __init__(
+        self,
+        dim: int,
+        d_state: int = 32,
+        d_conv: int = 4,
+        expand: int = 2,
+        dropout: float = 0.1,
+    ):
+        super().__init__()
+        self._use_mamba = _MAMBA_AVAILABLE
+
+        if self._use_mamba:
+            self.norm = nn.LayerNorm(dim)
+            self.mamba_h = _MambaSSM(d_model=dim, d_state=d_state, d_conv=d_conv, expand=expand)
+            self.mamba_v = _MambaSSM(d_model=dim, d_state=d_state, d_conv=d_conv, expand=expand)
+            self.fusion = nn.Linear(dim * 2, dim)
+            self.dropout = nn.Dropout(dropout)
+        else:
+            self._pseudo = _OmniBiMambaBlockPseudo(
+                dim=dim, d_state=d_state, d_conv=d_conv, expand=expand, dropout=dropout
+            )
+
+    def forward(self, x: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        if self._use_mamba:
+            return self._forward_mamba(x, height, width)
+        return self._pseudo(x, height, width)
+
+    def _forward_mamba(self, x: torch.Tensor, height: int, width: int) -> torch.Tensor:
+        B, L, C = x.shape
+        residual = x
+        x_norm = self.norm(x)
+
+        # Horizontal pass
+        feat_h = self.mamba_h(x_norm)
+
+        # Vertical pass: transpose H↔W, run Mamba, restore original order
+        x_v = x_norm.view(B, height, width, C).permute(0, 2, 1, 3).contiguous().view(B, L, C)
+        feat_v_raw = self.mamba_v(x_v)
+        feat_v = feat_v_raw.view(B, width, height, C).permute(0, 2, 1, 3).contiguous().view(B, L, C)
+
+        fused = self.fusion(torch.cat([feat_h, feat_v], dim=-1))
+        return residual + self.dropout(fused)
 
 
 class PrecipitationEnhancementCNN(nn.Module):
@@ -112,6 +231,13 @@ class PrecipitationEnhancementCNN(nn.Module):
 
 
 class CrossAttentionMamba(nn.Module):
+    """PWV (single frame) + Radar sequence -> multi-step precipitation forecast.
+
+    Args:
+        radar_seq_len: number of radar frames in the input sequence (T).
+                       T=1 falls back to single-frame mode for compatibility.
+    """
+
     def __init__(
         self,
         img_size: int = 66,
@@ -122,8 +248,9 @@ class CrossAttentionMamba(nn.Module):
         num_classes: int = 3,
         dim: int = 128,
         depth: int = 4,
-        d_state: int = 64,
+        d_state: int = 32,
         dropout: float = 0.15,
+        radar_seq_len: int = 12,
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -132,6 +259,7 @@ class CrossAttentionMamba(nn.Module):
         self.dim = dim
         self.img_size = img_size
         self.img_size_w = img_size_w
+        self.radar_seq_len = radar_seq_len
 
         self.num_patches_h = (img_size - patch_size) // stride + 1
         self.num_patches_w = (img_size_w - patch_size) // stride + 1
@@ -145,45 +273,89 @@ class CrossAttentionMamba(nn.Module):
                 nn.Conv2d(dim // 2, dim, kernel_size=patch_size, stride=stride),
             )
 
+        # Branch 1: PWV encoder
         self.patch_embed1 = build_patch_embed()
-        self.patch_embed2 = build_patch_embed()
-
         self.pos_embed1 = nn.Parameter(torch.zeros(1, num_patches, dim))
-        self.pos_embed2 = nn.Parameter(torch.zeros(1, num_patches, dim))
-
+        nn.init.trunc_normal_(self.pos_embed1, std=0.02)
         self.blocks1 = nn.ModuleList(
-            [
-                MambaBlock(dim=dim, d_state=d_state, expand=2, dropout=dropout)
-                for _ in range(depth)
-            ]
-        )
-        self.blocks2 = nn.ModuleList(
-            [
-                MambaBlock(dim=dim, d_state=d_state, expand=2, dropout=dropout)
-                for _ in range(depth)
-            ]
+            [OmniMambaBlock(dim=dim, d_state=d_state, expand=2, dropout=dropout)
+             for _ in range(depth)]
         )
 
+        # Branch 2: Radar temporal encoder (shared patch embed across T frames)
+        self.patch_embed2 = build_patch_embed()
+        self.pos_embed2 = nn.Parameter(torch.zeros(1, num_patches, dim))
+        nn.init.trunc_normal_(self.pos_embed2, std=0.02)
+        self.blocks2 = nn.ModuleList(
+            [OmniMambaBlock(dim=dim, d_state=d_state, expand=2, dropout=dropout)
+             for _ in range(depth)]
+        )
+        # Temporal aggregation: per spatial position GRU over T radar frames
+        self.temporal_gru = nn.GRU(
+            input_size=dim,
+            hidden_size=dim,
+            num_layers=1,
+            batch_first=True,
+            bidirectional=False,
+        )
+        self.temporal_norm = nn.LayerNorm(dim)
+
+        # Fusion & output
         self.cross_attn = GatedCrossAttentionBlock(dim, num_heads=8, dropout=dropout)
         self.norm = nn.LayerNorm(dim)
-
         self.head = nn.Linear(dim, patch_size * patch_size * num_classes)
         self.cnn_enhancement = PrecipitationEnhancementCNN(num_classes, num_classes)
 
-    def forward(self, img1: torch.Tensor, img2: torch.Tensor) -> torch.Tensor:
-        x1 = self.patch_embed1(img1).flatten(2).transpose(1, 2)
-        x2 = self.patch_embed2(img2).flatten(2).transpose(1, 2)
+    def _encode_radar_seq(self, radar_seq: torch.Tensor) -> torch.Tensor:
+        """Encode a radar sequence into a single spatial token sequence.
 
-        x1 = x1 + self.pos_embed1
-        x2 = x2 + self.pos_embed2
+        Args:
+            radar_seq: [B, T, 1, H, W]
+        Returns:
+            [B, num_patches, dim]
+        """
+        B, T, C, H, W = radar_seq.shape
+        L = self.num_patches_h * self.num_patches_w
 
-        current_h, current_w = self.num_patches_h, self.num_patches_w
+        # Embed each frame with shared patch_embed2
+        x = radar_seq.view(B * T, C, H, W)
+        x = self.patch_embed2(x).flatten(2).transpose(1, 2)  # [B*T, L, dim]
+        x = x + self.pos_embed2  # positional encoding
 
-        for blk in self.blocks1:
-            x1 = blk(x1, current_h, current_w)
+        # Spatial OmniMamba for each frame (shared spatial blocks)
         for blk in self.blocks2:
-            x2 = blk(x2, current_h, current_w)
+            x = blk(x, self.num_patches_h, self.num_patches_w)
 
+        # x: [B*T, L, dim] -> [B, T, L, dim]
+        x = x.view(B, T, L, self.dim)
+
+        # Temporal aggregation: [B, T, L, dim] -> [B*L, T, dim] -> GRU -> [B*L, dim]
+        x = x.permute(0, 2, 1, 3).contiguous().view(B * L, T, self.dim)
+        _, h_n = self.temporal_gru(x)          # h_n: [1, B*L, dim]
+        x_agg = h_n.squeeze(0)                  # [B*L, dim]
+        x_agg = x_agg.view(B, L, self.dim)
+        return self.temporal_norm(x_agg)        # [B, L, dim]
+
+    def forward(self, pwv: torch.Tensor, radar_seq: torch.Tensor) -> torch.Tensor:
+        """
+        Args:
+            pwv:       [B, 1, H, W]
+            radar_seq: [B, T, 1, H, W]  or  [B, 1, H, W] (single-frame compat)
+        """
+        # Single-frame backward compatibility
+        if radar_seq.dim() == 4:
+            radar_seq = radar_seq.unsqueeze(1)  # [B, 1, 1, H, W]
+
+        # PWV branch
+        x1 = self.patch_embed1(pwv).flatten(2).transpose(1, 2)
+        x1 = x1 + self.pos_embed1
+        for blk in self.blocks1:
+            x1 = blk(x1, self.num_patches_h, self.num_patches_w)
+
+        # Radar temporal branch
+        x2 = self._encode_radar_seq(radar_seq)  # [B, L, dim]
+
+        # Cross-attention fusion
         x_fuse = self.cross_attn(x1, x2)
         x_fuse = self.norm(x_fuse)
         x_fuse = self.head(x_fuse)
@@ -209,4 +381,4 @@ class CrossAttentionMamba(nn.Module):
             x_fuse, size=(self.img_size, self.img_size_w), mode="bilinear", align_corners=False
         )
         x_final = self.cnn_enhancement(x_raw)
-        return x_final
+        return torch.sigmoid(x_final)
