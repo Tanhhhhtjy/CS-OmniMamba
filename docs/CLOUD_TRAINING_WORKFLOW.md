@@ -63,3 +63,42 @@ python train.py --confirm-train --data-root ./data --results-dir ./results
 - 先跑 Baseline
 - 再按顺序做低风险参数改动（A-1/A-2/A-3）
 - 每次只改一个变量组，便于归因
+
+---
+
+## 6. 数据审计流程（先审计再训练）
+
+建议先执行数据质量审计，再启动长时训练：
+
+```bash
+mkdir -p results/data_audit/{figures,logs}
+
+python scripts/data_audit_inventory.py \
+	--data-root ./data \
+	--output-dir ./results/data_audit \
+	> ./results/data_audit/logs/inventory.log 2>&1
+
+python scripts/data_audit_match_quality.py \
+	--data-root ./data \
+	--output-dir ./results/data_audit \
+	> ./results/data_audit/logs/match_quality.log 2>&1
+
+python scripts/data_audit_distribution.py \
+	--data-root ./data \
+	--output-dir ./results/data_audit \
+	> ./results/data_audit/logs/distribution.log 2>&1
+
+python scripts/data_audit_split_drift.py \
+	--data-root ./data \
+	--output-dir ./results/data_audit \
+	--distribution-json ./results/data_audit/rain_bins_by_split.json \
+	> ./results/data_audit/logs/split_drift.log 2>&1
+```
+
+关键输出：
+
+- `results/data_audit/inventory.json`
+- `results/data_audit/match_quality.json`
+- `results/data_audit/rain_bins_by_split.json`
+- `results/data_audit/split_drift_metrics.json`
+- `results/data_audit/figures/*.png`
