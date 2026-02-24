@@ -16,9 +16,9 @@ class TrainingConfig:
     epochs: int = 1000
     lr: float = 1e-4
     # L2 regularisation – reduces overfitting on small validation sets
-    weight_decay: float = 2e-3
+    weight_decay: float = 5e-4
     # Cosine-restart period (epochs). patience must be >= lr_scheduler_T0
-    lr_scheduler_T0: int = 30
+    lr_scheduler_T0: int = 50
     num_workers: int = 0 if os.name == "nt" else 4
     # Radar temporal sequence: 12 frames x 6 min = 66 min history
     # Increase to 20 (114 min) when GPU memory allows

@@ -135,7 +135,7 @@ def train(
     gate_history: List[float] = []
 
     best_val_loss = float("inf")
-    patience = cfg.lr_scheduler_T0 * 2  # always >= 2 × T_0
+    patience = cfg.lr_scheduler_T0 * 4  # always >= 4 × T_0
     counter = 0
 
     print(f"Start training for {cfg.epochs} epochs...")

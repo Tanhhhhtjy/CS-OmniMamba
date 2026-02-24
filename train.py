@@ -26,11 +26,22 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--batch-size", type=int, default=None)
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--confirm-train",
+        action="store_true",
+        help="Explicitly confirm running full training (recommended only on cloud).",
+    )
     return parser
 
 
 def main() -> None:
     args = _build_arg_parser().parse_args()
+
+    if not args.confirm_train:
+        raise SystemExit(
+            "Training is blocked by default to avoid accidental local runs. "
+            "Use --confirm-train when launching training on cloud server."
+        )
 
     from omnimamba.config import TrainingConfig
     from omnimamba.data_match import match_samples

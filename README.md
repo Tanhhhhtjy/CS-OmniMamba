@@ -186,27 +186,30 @@ pip install mamba-ssm   # 需要 CUDA 环境
 
 ## 训练
 
+> ⚠️ 团队约定：本地仅开发与测试，**不要在本地执行完整训练**。  
+> 训练请走云端流程，见 [docs/CLOUD_TRAINING_WORKFLOW.md](docs/CLOUD_TRAINING_WORKFLOW.md)。
+
 ### 快速开始
 
 ```bash
-python train.py
+python train.py --confirm-train
 ```
 
 ### 常用参数
 
 ```bash
 # 指定数据路径和输出目录
-python train.py --data-root ./data --results-dir ./results
+python train.py --confirm-train --data-root ./data --results-dir ./results
 
 # 自定义超参数
-python train.py --epochs 200 --batch-size 4 --lr 5e-5
+python train.py --confirm-train --epochs 200 --batch-size 4 --lr 5e-5
 
 # 指定设备
-python train.py --device cuda   # GPU
-python train.py --device cpu    # CPU
+python train.py --confirm-train --device cuda   # GPU
+python train.py --confirm-train --device cpu    # CPU
 
 # 固定随机种子
-python train.py --seed 42
+python train.py --confirm-train --seed 42
 ```
 
 ### 训练输出
@@ -227,7 +230,7 @@ python train.py --seed 42
 - **优化器**：AdamW，lr=1e-4
 - **调度器**：CosineAnnealingWarmRestarts（T_0=50）
 - **梯度裁剪**：max_norm=1.0
-- **早停**：验证集 loss 连续 35 个 epoch 无改善则停止
+- **早停**：`patience = 4 × T_0`（默认 200 个 epoch 无改善触发）
 - **评估频率**：每 5 个 epoch 打印详细指标并可视化
 
 ---
