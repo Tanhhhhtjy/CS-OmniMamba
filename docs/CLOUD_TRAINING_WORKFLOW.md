@@ -39,6 +39,7 @@ git push
 
 ```bash
 git pull
+pip install -r requirements.txt
 python train.py --confirm-train --data-root ./data --results-dir ./results
 ```
 

@@ -172,7 +172,7 @@ $$\mathcal{L} = 1.0 \cdot L_\text{MAE}^{\text{weighted}} + 0.05 \cdot L_\text{FF
 ## 安装依赖
 
 ```bash
-pip install torch torchvision pillow numpy matplotlib pytest
+pip install -r requirements.txt
 ```
 
 GPU 加速（可选，启用真实 mamba_ssm）：
