@@ -73,22 +73,22 @@ python train.py --confirm-train --data-root ./data --results-dir ./results
 ```bash
 mkdir -p results/data_audit/{figures,logs}
 
-python scripts/data_audit_inventory.py \
+python -m scripts.data_audit_inventory \
 	--data-root ./data \
 	--output-dir ./results/data_audit \
 	> ./results/data_audit/logs/inventory.log 2>&1
 
-python scripts/data_audit_match_quality.py \
+python -m scripts.data_audit_match_quality \
 	--data-root ./data \
 	--output-dir ./results/data_audit \
 	> ./results/data_audit/logs/match_quality.log 2>&1
 
-python scripts/data_audit_distribution.py \
+python -m scripts.data_audit_distribution \
 	--data-root ./data \
 	--output-dir ./results/data_audit \
 	> ./results/data_audit/logs/distribution.log 2>&1
 
-python scripts/data_audit_split_drift.py \
+python -m scripts.data_audit_split_drift \
 	--data-root ./data \
 	--output-dir ./results/data_audit \
 	--distribution-json ./results/data_audit/rain_bins_by_split.json \

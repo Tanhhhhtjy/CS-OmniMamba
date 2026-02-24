@@ -1,12 +1,17 @@
 import argparse
 import json
 import os
+import sys
 from dataclasses import asdict
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 from PIL import Image
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from omnimamba.data_match import parse_time
 

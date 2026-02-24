@@ -2,10 +2,15 @@ import argparse
 import json
 import math
 import os
+import sys
 from datetime import datetime, timedelta
 from typing import Dict, List, Tuple
 
 import numpy as np
+
+PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, PROJECT_ROOT)
 
 from omnimamba.config import TrainingConfig
 from omnimamba.data_match import match_samples
