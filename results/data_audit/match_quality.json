@@ -1,0 +1,52 @@
+{
+  "generated_at": "2026-02-25T01:10:28.151882",
+  "config": {
+    "train_start": "2023-04-30T23:00:00",
+    "train_end": "2023-07-30T23:59:59",
+    "val_start": "2023-07-31T00:00:00",
+    "val_end": "2023-08-20T23:59:59",
+    "test_start": "2023-08-21T00:00:00",
+    "test_end": "2023-08-31T23:59:59",
+    "radar_seq_len": 12
+  },
+  "counts": {
+    "total_pwv_candidates": 50876,
+    "matched_records": 29501,
+    "matched_ratio": 0.5798608381162041,
+    "reasons": {
+      "pwv_bad_timestamp": 0,
+      "out_of_split_range": 21350,
+      "no_radar_frames": 0,
+      "radar_anchor_too_far": 0,
+      "missing_target_1h": 5,
+      "missing_target_2h": 15,
+      "missing_target_3h": 25,
+      "matched": 29501
+    }
+  },
+  "anchor_offset_seconds": {
+    "count": 29501,
+    "mean": 0.6711636893664622,
+    "p50": 0.0,
+    "p90": 0.0,
+    "p99": 0.0,
+    "max": 3600.0
+  },
+  "radar_padding_per_sample": {
+    "count": 29501,
+    "mean": 0.005965899461035219,
+    "p50": 0.0,
+    "p90": 0.0,
+    "p99": 0.0,
+    "max": 11.0
+  },
+  "radar_interframe_gap_seconds": {
+    "count": 324335,
+    "mean": 360.0,
+    "p50": 360.0,
+    "p90": 360.0,
+    "p99": 360.0,
+    "max": 360.0
+  },
+  "padding_trigger_ratio": 0.0007118402766007932
+}

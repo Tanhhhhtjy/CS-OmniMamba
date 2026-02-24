@@ -1,0 +1,59 @@
+{
+  "generated_at": "2026-02-25T01:10:52.870421",
+  "split_summary": {
+    "train": {
+      "count": 21850,
+      "start": "2023-04-30T23:00:00",
+      "end": "2023-07-30T23:54:00"
+    },
+    "val": {
+      "count": 5040,
+      "start": "2023-07-31T00:00:00",
+      "end": "2023-08-20T23:54:00"
+    },
+    "test": {
+      "count": 2611,
+      "start": "2023-08-21T00:00:00",
+      "end": "2023-08-31T21:00:00"
+    }
+  },
+  "leakage_risk": {
+    "history_minutes": 66,
+    "future_minutes": 180,
+    "train_val_overlaps": 41,
+    "val_test_overlaps": 41,
+    "train_test_overlaps": 0
+  },
+  "hour_distribution_jsd": {
+    "train_val": 5.991788755181968e-07,
+    "train_test": 0.00012203274967581145,
+    "val_test": 0.00011204487385033232
+  },
+  "rain_bin_jsd": {
+    "T+1h": {
+      "train_val": 0.0008172903729029863,
+      "train_test": 0.003411796653680881,
+      "val_test": 0.0027864013757591443
+    },
+    "T+2h": {
+      "train_val": 0.00077796049053388,
+      "train_test": 0.0033118304748618937,
+      "val_test": 0.0027663437514580595
+    },
+    "T+3h": {
+      "train_val": 0.0007911565964538053,
+      "train_test": 0.003185340085133761,
+      "val_test": 0.0027560126774552893
+    }
+  },
+  "heavy_event_ratio_ge_16mmh": {
+    "train": 0.12448512585812357,
+    "val": 0.31547619047619047,
+    "test": 0.12638835695135964
+  },
+  "notes": {
+    "rain_bin_jsd_available": true,
+    "distribution_json": "./results/data_audit/rain_bins_by_split.json",
+    "hint": "Run scripts/data_audit_distribution.py first for rain_bin_jsd."
+  }
+}

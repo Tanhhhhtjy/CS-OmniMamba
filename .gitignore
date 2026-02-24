@@ -3,6 +3,7 @@
 CS-OmniMamba.zip
 
 data
+data.zip
 
 .github
 
@@ -24,3 +25,6 @@ source/
 __pycache__/
 *.pyc
 *.pyo
+
+results/run3_20260224
+data.zip

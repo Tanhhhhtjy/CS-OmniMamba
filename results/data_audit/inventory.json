@@ -1,0 +1,106 @@
+{
+  "data_root": "./data",
+  "generated_at": "2026-02-25T01:10:24.320727",
+  "PWV": {
+    "folder": "./data/PWV",
+    "total_files": 50876,
+    "image_files": 50876,
+    "valid_timestamp_images": 50876,
+    "invalid_timestamp_images": 0,
+    "duplicate_timestamp_files": 0,
+    "timestamp_start": "2023-02-01-00-00-00",
+    "timestamp_end": "2023-08-31-23-30-00",
+    "extensions": {
+      ".png": 50876
+    },
+    "image_health": {
+      "checked_images": 2000,
+      "read_failures": 0,
+      "constant_image_count": 0,
+      "shape_counts": {
+        "66x70": 2000
+      },
+      "pixel_min": 0,
+      "pixel_max": 255,
+      "pixel_mean": 181.71986114718612,
+      "p01": 48.012655844155844,
+      "p50": 191.06136363636364,
+      "p99": 247.80642207792206,
+      "sat0_ratio": 0.006404545454545454,
+      "sat255_ratio": 0.0004724025974025974
+    },
+    "timeline": {
+      "days_covered": 211.97916666666666,
+      "expected_6min_steps": 50876,
+      "estimated_coverage_ratio": 1.0
+    }
+  },
+  "RADAR": {
+    "folder": "./data/RADAR",
+    "total_files": 35519,
+    "image_files": 35519,
+    "valid_timestamp_images": 35519,
+    "invalid_timestamp_images": 0,
+    "duplicate_timestamp_files": 0,
+    "timestamp_start": "2023-05-01-00-00-00",
+    "timestamp_end": "2023-09-25-23-48-00",
+    "extensions": {
+      ".png": 35519
+    },
+    "image_health": {
+      "checked_images": 2000,
+      "read_failures": 0,
+      "constant_image_count": 656,
+      "shape_counts": {
+        "66x70": 2000
+      },
+      "pixel_min": 0,
+      "pixel_max": 255,
+      "pixel_mean": 249.65969556277057,
+      "p01": 208.2021385281385,
+      "p50": 254.36482683982683,
+      "p99": 255.0,
+      "sat0_ratio": 0.0010819264069264068,
+      "sat255_ratio": 0.9256097402597403
+    },
+    "timeline": {
+      "days_covered": 147.99166666666667,
+      "expected_6min_steps": 35519,
+      "estimated_coverage_ratio": 1.0
+    }
+  },
+  "RAIN": {
+    "folder": "./data/RAIN",
+    "total_files": 50881,
+    "image_files": 50881,
+    "valid_timestamp_images": 50881,
+    "invalid_timestamp_images": 0,
+    "duplicate_timestamp_files": 0,
+    "timestamp_start": "2023-02-01-00-00-00",
+    "timestamp_end": "2023-09-01-00-00-00",
+    "extensions": {
+      ".png": 50881
+    },
+    "image_health": {
+      "checked_images": 2000,
+      "read_failures": 0,
+      "constant_image_count": 926,
+      "shape_counts": {
+        "66x70": 2000
+      },
+      "pixel_min": 0,
+      "pixel_max": 255,
+      "pixel_mean": 251.76032132034632,
+      "p01": 216.34918181818182,
+      "p50": 254.9668831168831,
+      "p99": 255.0,
+      "sat0_ratio": 0.001101839826839827,
+      "sat255_ratio": 0.8969411255411256
+    },
+    "timeline": {
+      "days_covered": 212.0,
+      "expected_6min_steps": 50881,
+      "estimated_coverage_ratio": 1.0
+    }
+  }
+}
