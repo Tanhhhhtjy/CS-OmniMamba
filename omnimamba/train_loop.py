@@ -12,6 +12,16 @@ from .metrics import csi, ets, mae, psnr, ssim_simple
 from .viz import plot_gate_history, plot_losses, show_results
 
 
+def _update_ema(prev_ema: Optional[float], value: float, alpha: float) -> float:
+    if prev_ema is None:
+        return value
+    return alpha * value + (1.0 - alpha) * prev_ema
+
+
+def _is_significant_improvement(current: float, best: float, min_delta: float) -> bool:
+    return current < (best - min_delta)
+
+
 def train_epoch(
     model,
     dataloader,
@@ -133,8 +143,11 @@ def train(
     train_losses: List[float] = []
     val_losses: List[float] = []
     gate_history: List[float] = []
+    val_ema_history: List[float] = []
+    val_ets_history: List[float] = []
 
-    best_val_loss = float("inf")
+    best_monitor = float("inf")
+    val_ema: Optional[float] = None
     patience = cfg.lr_scheduler_T0 * 4  # always >= 4 × T_0
     counter = 0
 
@@ -151,13 +164,20 @@ def train(
         val_loss, metrics = validate_epoch(model, val_loader, device, criterion)
         val_losses.append(val_loss)
 
+        val_ema = _update_ema(val_ema, val_loss, cfg.val_ema_alpha)
+        val_ema_history.append(val_ema)
+        val_ets_mean = sum(metrics["ets"]) / max(len(metrics["ets"]), 1)
+        val_ets_history.append(val_ets_mean)
+
+        monitor_value = val_ema if cfg.early_stop_use_ema else val_loss
+
         gate_display = avg_gate if avg_gate is not None else "N/A"
         print(
-            f"Epoch {epoch + 1}/{cfg.epochs} | TrnLoss: {tr_loss:.5f} | ValLoss: {val_loss:.5f} | Gate: {gate_display}"
+            f"Epoch {epoch + 1}/{cfg.epochs} | TrnLoss: {tr_loss:.5f} | ValLoss: {val_loss:.5f} | ValEMA: {val_ema:.5f} | ValETS@0.04(mean): {val_ets_mean:.4f} | Gate: {gate_display}"
         )
 
-        if val_loss < best_val_loss:
-            best_val_loss = val_loss
+        if _is_significant_improvement(monitor_value, best_monitor, cfg.early_stop_min_delta):
+            best_monitor = monitor_value
             counter = 0
             torch.save(model.state_dict(), os.path.join(results_dir, "best_model.pth"))
         else:
@@ -185,7 +205,18 @@ def train(
         print("Loaded best_model.pth for final evaluation.")
 
     val_loss_final, val_metrics = validate_epoch(model, val_loader, device, criterion)
-    report: Dict = {"val": {"loss": val_loss_final, "metrics": val_metrics}}
+    report: Dict = {
+        "val": {"loss": val_loss_final, "metrics": val_metrics},
+        "early_stopping": {
+            "monitor": "val_loss_ema" if cfg.early_stop_use_ema else "val_loss",
+            "val_ema_alpha": cfg.val_ema_alpha,
+            "min_delta": cfg.early_stop_min_delta,
+            "patience": patience,
+            "best_monitor": best_monitor,
+            "last_val_ema": val_ema_history[-1] if val_ema_history else None,
+            "last_val_ets_mean": val_ets_history[-1] if val_ets_history else None,
+        },
+    }
 
     if test_loader is not None:
         test_loss, test_metrics = validate_epoch(model, test_loader, device, criterion)

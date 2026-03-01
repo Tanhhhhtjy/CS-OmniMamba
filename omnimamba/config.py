@@ -19,6 +19,10 @@ class TrainingConfig:
     weight_decay: float = 5e-4
     # Cosine-restart period (epochs). patience must be >= lr_scheduler_T0
     lr_scheduler_T0: int = 50
+    # Early-stopping robustness: monitor EMA(val_loss) with a minimum meaningful gain
+    val_ema_alpha: float = 0.2
+    early_stop_min_delta: float = 1e-4
+    early_stop_use_ema: bool = True
     num_workers: int = 0 if os.name == "nt" else 4
     # Radar temporal sequence: 12 frames x 6 min = 66 min history
     # Increase to 20 (114 min) when GPU memory allows

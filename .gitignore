@@ -28,3 +28,21 @@ __pycache__/
 
 results/run3_20260224
 data.zip
+test_raw_image.py
+fix_dataset.py
+fix_viz_logic.py
+fix_viz.py
+fix_viz2.py
+fix_viz3.py
+fix_viz4.py
+fix_viz5.py
+split_drift_metrics.json
+test_batch_values.py
+test_cmap_jet.png
+test_val_loader.py
+test_val_time.py
+vis_epoch_999.png
+vis_epoch_1000.png
+tests/test_early_stopping.py
+tests/test_config.py
+tests/test_viz.py
