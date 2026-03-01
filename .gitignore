@@ -43,6 +43,3 @@ test_val_loader.py
 test_val_time.py
 vis_epoch_999.png
 vis_epoch_1000.png
-tests/test_early_stopping.py
-tests/test_config.py
-tests/test_viz.py
