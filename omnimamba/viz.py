@@ -30,12 +30,37 @@ def plot_gate_history(history: Iterable[Optional[float]], save_dir: str) -> None
     plt.close()
 
 
-def show_results(model, dataloader, device, epoch: int, save_dir: str, num_samples: int = 3) -> None:
+import random
+
+
+def show_results(
+    model, dataloader, device, epoch: int, save_dir: str, num_samples: int = 3
+) -> None:
     model.eval()
-    try:
-        img1, radar_seq, targets = next(iter(dataloader))
-    except StopIteration:
-        return
+
+    # Check if we have the full validation loader and want to sample a rainy batch
+    # instead of always showing the first chronological batch (which is sunny)
+    batch = None
+    if hasattr(dataloader, "dataset") and len(dataloader) > 0:
+        # In our multi-window validation split, the 4th window (August) has the heaviest rain
+        # It's in the last 1/4th of the dataset
+        num_batches = len(dataloader)
+        if num_batches > 100:  # Ensures it's actually the full val loader
+            # Randomly pick a batch from the last quarter of the dataset
+            target_idx = random.randint(num_batches * 3 // 4, num_batches - 1)
+            for idx, b in enumerate(dataloader):
+                if idx == target_idx:
+                    batch = b
+                    break
+
+    # Fallback to the first batch if the logic above didn't trigger
+    if batch is None:
+        try:
+            batch = next(iter(dataloader))
+        except StopIteration:
+            return
+
+    img1, radar_seq, targets = batch
 
     img1 = img1.to(device)
     radar_seq = radar_seq.to(device)
@@ -45,7 +70,7 @@ def show_results(model, dataloader, device, epoch: int, save_dir: str, num_sampl
     img1 = img1.cpu()
     # Use last radar frame for display
     if radar_seq.dim() == 5:
-        img2_display = radar_seq[:, -1].cpu()   # [B, 1, H, W]
+        img2_display = radar_seq[:, -1].cpu()  # [B, 1, H, W]
     else:
         img2_display = radar_seq.cpu()
     preds = preds.cpu().clamp(0, 1)
