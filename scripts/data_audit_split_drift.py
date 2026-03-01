@@ -72,8 +72,14 @@ def interval_overlap_count(
     if not times_a or not times_b:
         return 0
 
-    a_intervals = [(t - timedelta(minutes=history_minutes), t + timedelta(minutes=future_minutes)) for t in times_a]
-    b_intervals = [(t - timedelta(minutes=history_minutes), t + timedelta(minutes=future_minutes)) for t in times_b]
+    a_intervals = [
+        (t - timedelta(minutes=history_minutes), t + timedelta(minutes=future_minutes))
+        for t in times_a
+    ]
+    b_intervals = [
+        (t - timedelta(minutes=history_minutes), t + timedelta(minutes=future_minutes))
+        for t in times_b
+    ]
 
     a_intervals.sort(key=lambda x: x[0])
     b_intervals.sort(key=lambda x: x[0])
@@ -116,7 +122,9 @@ def rain_prob_vector(dist: Dict, split_name: str, horizon: str) -> np.ndarray:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Analyze split drift and potential boundary leakage.")
+    parser = argparse.ArgumentParser(
+        description="Analyze split drift and potential boundary leakage."
+    )
     parser.add_argument("--data-root", default="./data")
     parser.add_argument("--output-dir", default="./results/data_audit")
     parser.add_argument(
@@ -146,10 +154,33 @@ def main() -> None:
     split_summary = {}
     for name, recs in split_map.items():
         ts = [r.timestamp for r in recs]
+        if not ts:
+            split_summary[name] = {
+                "count": 0,
+                "start": None,
+                "end": None,
+                "windows": [],
+            }
+            continue
+
+        # Group into contiguous windows (gap > 1 day means new window)
+        windows = []
+        cur_start = ts[0]
+        cur_end = ts[0]
+        for t in ts[1:]:
+            if (t - cur_end).total_seconds() > 86400:  # 1 day gap
+                windows.append(
+                    {"start": cur_start.isoformat(), "end": cur_end.isoformat()}
+                )
+                cur_start = t
+            cur_end = t
+        windows.append({"start": cur_start.isoformat(), "end": cur_end.isoformat()})
+
         split_summary[name] = {
             "count": len(recs),
             "start": ts[0].isoformat() if ts else None,
             "end": ts[-1].isoformat() if ts else None,
+            "windows": windows,
         }
 
     history_minutes = (cfg.radar_seq_len - 1) * 6

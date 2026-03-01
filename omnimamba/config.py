@@ -24,10 +24,25 @@ class TrainingConfig:
     # Increase to 20 (114 min) when GPU memory allows
     radar_seq_len: int = 12
 
+    # Date Splitting Configuration
+    split_purge_gap_minutes: int = 360  # 6 hours purge gap to prevent data leakage
+
     train_start: datetime = datetime(2023, 4, 30, 23, 0, 0)
-    train_end: datetime = datetime(2023, 7, 30, 23, 59, 59)
-    # Validation window extended to ~3 weeks to reduce loss-estimate variance
+    train_end: datetime = datetime(
+        2023, 8, 20, 23, 59, 59
+    )  # Base train period covering up to test
+
+    # Selected 4x5-day windows to balance the heavy event ratio exactly with train (16.0%)
+    val_windows: tuple = (
+        (datetime(2023, 5, 1, 0, 0, 0), datetime(2023, 5, 5, 23, 59, 59)),
+        (datetime(2023, 5, 6, 0, 0, 0), datetime(2023, 5, 10, 23, 59, 59)),
+        (datetime(2023, 6, 25, 0, 0, 0), datetime(2023, 6, 29, 23, 59, 59)),
+        (datetime(2023, 8, 4, 0, 0, 0), datetime(2023, 8, 8, 23, 59, 59)),
+    )
+
+    # Legacy val settings kept for compatibility if needed, but splits.py will use val_windows
     val_start: datetime = datetime(2023, 7, 31, 0, 0, 0)
     val_end: datetime = datetime(2023, 8, 20, 23, 59, 59)
+
     test_start: datetime = datetime(2023, 8, 21, 0, 0, 0)
     test_end: datetime = datetime(2023, 8, 31, 23, 59, 59)
