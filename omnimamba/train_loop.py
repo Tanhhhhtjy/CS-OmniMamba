@@ -180,11 +180,15 @@ def train(
             best_monitor = monitor_value
             counter = 0
             torch.save(model.state_dict(), os.path.join(results_dir, "best_model.pth"))
+            print(f"  --> Best model saved (monitor: {monitor_value:.5f})")
         else:
             counter += 1
             if counter >= patience:
-                print("Early stopping triggered.")
+                print(f"Early stopping triggered after {counter} epochs without significant improvement.")
                 break
+
+        # Save latest checkpoint for resume
+        torch.save(model.state_dict(), os.path.join(results_dir, "latest_model.pth"))
 
         if (epoch + 1) % 5 == 0:
             show_results(model, val_loader, device, epoch, results_dir)

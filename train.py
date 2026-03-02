@@ -27,6 +27,11 @@ def _build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--lr", type=float, default=None)
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume training from latest_model.pth if found in results-dir.",
+    )
+    parser.add_argument(
         "--confirm-train",
         action="store_true",
         help="Explicitly confirm running full training (recommended only on cloud).",
@@ -97,6 +102,14 @@ def main() -> None:
 
     results_dir = args.results_dir
     os.makedirs(results_dir, exist_ok=True)
+
+    if args.resume:
+        latest_ckpt = os.path.join(results_dir, "latest_model.pth")
+        if os.path.exists(latest_ckpt):
+            print(f"Resuming from {latest_ckpt}...")
+            model.load_state_dict(torch.load(latest_ckpt, map_location=device))
+        else:
+            print(f"No checkpoint found at {latest_ckpt}. Starting from scratch.")
 
     train(model, train_loader, val_loader, device, cfg, results_dir, test_loader=test_loader)
 
