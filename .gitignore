@@ -1,0 +1,48 @@
+# ── Model weights ─────────────────────────────────────────────────────────────
+**/*.pt
+checkpoints/
+
+# ── Training outputs ──────────────────────────────────────────────────────────
+runs/
+
+# ── Raw & preprocessed data ───────────────────────────────────────────────────
+2025河北雷达灰度图/
+radar_preprocessed/
+70×66_rain_pic_hebei_2025/
+PWV_2025_S/
+PWV_2025/
+abli-data/
+RADAR_2025/
+RAIN_2025/
+
+# ── Root-level legacy files ───────────────────────────────────────────────────
+ver_1.0.py
+predict_final.py
+dataset_analysis.md
+temporal_analysis.md
+benchmark_results.json
+gate_interpretability_2023-08-04-21-54-00.png
+radar_chart_efficiency.png
+
+# ── Archives & large blobs ────────────────────────────────────────────────────
+*.zip
+*.nc
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ── OS & IDE ──────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# ── Claude local config ───────────────────────────────────────────────────────
+.claude/
+
+# ── Misc project dirs not part of codebase ────────────────────────────────────
+draw/
+endnote/
